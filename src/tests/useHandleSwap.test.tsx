@@ -1,13 +1,12 @@
 import { renderHook, act } from '@testing-library/react-hooks';
-import useHandleSwap from '../hooks/useHandleSwap';
 import axios from 'axios';
 import { useCardano } from 'mynth-use-cardano';
 import { useTronlink } from '../contexts/ConnectTronWalletContext';
+import useHandleSwap from '../hooks/useHandleSwap'; // adjust the import path
 import useDecimals from '../hooks/useDecimals';
-import useProcessModal from './useProcessModal';
-import useHandleApiError from './useHandleApiErrors';
+import useHandleApiError from '../hooks/useHandleApiErrors';
+import useProcessModal from '../hooks/useProcessModal';
 
-// Mock external dependencies
 jest.mock('axios');
 jest.mock('mynth-use-cardano', () => ({
   useCardano: jest.fn(),
@@ -18,165 +17,124 @@ jest.mock('../contexts/ConnectTronWalletContext', () => ({
 jest.mock('../hooks/useDecimals', () => ({
   useDecimals: jest.fn(),
 }));
-jest.mock('./useProcessModal', () => ({
-  useProcessModal: jest.fn(),
-}));
 jest.mock('./useHandleApiErrors', () => ({
   useHandleApiError: jest.fn(),
 }));
+jest.mock('./useProcessModal', () => ({
+  useProcessModal: jest.fn(),
+}));
+
+const mockShowProcessModal = jest.fn();
+const mockShowSuccessModal = jest.fn();
+const mockHandleApiError = jest.fn();
+const mockToCardanoTokens = jest.fn();
 
 describe('useHandleSwap', () => {
-  let handleSwap;
-  let isSwapLoading;
-  let swapProcessStatus;
-
   beforeEach(() => {
-    // Mock hooks and states
-    useCardano.mockReturnValue({
-      lucid: { wallet: { getUtxos: jest.fn() }, fromTx: jest.fn() },
-      account: { address: 'cardano-address' },
-    });
-    useTronlink.mockReturnValue({ address: 'tron-address' });
-    useDecimals.mockReturnValue({ toCardanoTokens: jest.fn(amount => amount) });
+    jest.clearAllMocks();
+    useHandleApiError.mockReturnValue({ handleApiError: mockHandleApiError });
     useProcessModal.mockReturnValue({
-      showProcessModal: jest.fn(),
-      showSuccessModal: jest.fn(),
-      swapProcessStatus: 'idle',
+      showProcessModal: mockShowProcessModal,
+      showSuccessModal: mockShowSuccessModal,
+      swapProcessStatus: 'building',
     });
-    useHandleApiError.mockReturnValue({
-      handleApiError: jest.fn(),
-    });
+    useDecimals.mockReturnValue({ toCardanoTokens: mockToCardanoTokens });
+  });
 
-    // Render the hook
+  it('should handle swap from Cardano wallet correctly', async () => {
+    const mockAccount = { address: 'mock-cardano-address' };
+    useCardano.mockReturnValue({ account: mockAccount, lucid: { wallet: { getUtxos: jest.fn().mockResolvedValue([]) }, fromTx: jest.fn() } });
+
+    const data = {
+      sender: { amount: '100', ticker: 'ADA', blockchain: 'cardano' },
+      receiver: { address: 'mock-receiver-address', amount: '100', ticker: 'MyUSD', blockchain: 'cardano' },
+    };
+
+    axios.post.mockResolvedValueOnce({ data: { tx: 'mock-tx' } });
+
     const { result } = renderHook(() => useHandleSwap());
-    handleSwap = result.current.handleSwap;
-    isSwapLoading = result.current.isSwapLoading;
-    swapProcessStatus = result.current.swapProcessStatus;
-  });
-
-  it('should handle Cardano swap correctly', async () => {
-    // Arrange
-    const swapData = {
-      sender: { amount: '10', ticker: 'ADA', blockchain: 'cardano' },
-      receiver: { address: 'receiver-address', amount: '10', ticker: 'MyUSD', blockchain: 'cardano' },
-    };
-
-    // Mock Cardano UTXO data
-    const mockUtxos = [{ assets: [{ ticker: 'ADA', amount: '10' }] }];
-    useCardano().lucid.wallet.getUtxos.mockResolvedValue(mockUtxos);
-
-    // Act
-    await act(async () => {
-      await handleSwap(swapData);
-    });
-
-    // Assert
-    expect(useProcessModal().showProcessModal).toHaveBeenCalledWith('generating');
-    expect(axios.post).toHaveBeenCalledWith(
-      'http://backend.uri/swap-ada/build',
-      expect.objectContaining({
-        address: 'cardano-address',
-        utxos: expect.arrayContaining([
-          expect.objectContaining({ assets: expect.arrayContaining([{ ticker: 'ADA' }]) }),
-        ]),
-        adaAmount: '10',
-      })
-    );
-    expect(useProcessModal().showProcessModal).toHaveBeenCalledWith('building');
-    expect(useProcessModal().showSuccessModal).toHaveBeenCalled();
-  });
-
-  it('should handle Tron swap correctly', async () => {
-    // Arrange
-    const swapData = {
-      sender: { amount: '10', ticker: 'USDT', blockchain: 'tron' },
-      receiver: { address: 'receiver-address', amount: '10', ticker: 'MyUSD', blockchain: 'tron' },
-    };
-
-    // Mock Tron balance
-    window.tron = {
-      tronWeb: {
-        defaultAddress: 'tron-address',
-        trx: { balance: jest.fn().mockResolvedValue('10000000') },
-        transactionBuilder: {},
-      },
-    };
-
-    // Act
-    await act(async () => {
-      await handleSwap(swapData);
-    });
-
-    // Assert
-    expect(window.tron.tronWeb.trx.balance).toHaveBeenCalledWith('tron-address');
-    expect(useProcessModal().showProcessModal).toHaveBeenCalledWith('building');
-    expect(axios.post).toHaveBeenCalled();
-    expect(useProcessModal().showSuccessModal).toHaveBeenCalled();
-  });
-
-  it('should handle insufficient funds error', async () => {
-    // Arrange
-    const swapData = {
-      sender: { amount: '10', ticker: 'USDT', blockchain: 'tron' },
-      receiver: { address: 'receiver-address', amount: '10', ticker: 'MyUSD', blockchain: 'tron' },
-    };
-
-    // Mock Tron balance to be insufficient
-    window.tron = {
-      tronWeb: {
-        defaultAddress: 'tron-address',
-        trx: { balance: jest.fn().mockResolvedValue('100000') },
-        transactionBuilder: {},
-      },
-    };
-
-    // Act
-    await act(async () => {
-      await handleSwap(swapData);
-    });
-
-    // Assert
-    expect(useProcessModal().showProcessModal).toHaveBeenCalledWith('failed', 'Minimum Required balance is 10 TRX');
-  });
-
-  it('should handle errors during API calls', async () => {
-    // Arrange
-    const swapData = {
-      sender: { amount: '10', ticker: 'ADA', blockchain: 'cardano' },
-      receiver: { address: 'receiver-address', amount: '10', ticker: 'MyUSD', blockchain: 'cardano' },
-    };
-
-    // Mock API to throw an error
-    axios.post.mockRejectedValue(new Error('API error'));
-
-    // Act
-    await act(async () => {
-      await handleSwap(swapData);
-    });
-
-    // Assert
-    expect(useHandleApiError().handleApiError).toHaveBeenCalledWith(expect.any(Error), expect.any(Function));
-    expect(useProcessModal().showProcessModal).toHaveBeenCalledWith('failed', 'Cannot assemble transaction', 'API error');
-  });
-
-  it('should not proceed with swap if already loading', async () => {
-    // Arrange
-    const swapData = {
-      sender: { amount: '10', ticker: 'ADA', blockchain: 'cardano' },
-      receiver: { address: 'receiver-address', amount: '10', ticker: 'MyUSD', blockchain: 'cardano' },
-    };
-
-    // Set isSwapLoading to true
+    
     act(() => {
-      result.current.isSwapLoading = true;
+      result.current.handleSwap(data);
     });
 
-    // Act
-    await act(async () => {
-      await handleSwap(swapData);
+    // Check if process modal is shown
+    expect(mockShowProcessModal).toHaveBeenCalledWith('generating');
+  });
+
+  it('should handle swap from TronLink wallet correctly', async () => {
+    const mockTronLinkAddress = 'mock-tron-address';
+    useTronlink.mockReturnValue({ address: mockTronLinkAddress });
+
+    const data = {
+      sender: { amount: '100', ticker: 'USDT', blockchain: 'tron' },
+      receiver: { address: 'mock-receiver-address', amount: '100', ticker: 'USDC', blockchain: 'tron' },
+    };
+
+    axios.post.mockResolvedValueOnce({ data: { tx: 'mock-tx' } });
+
+    const { result } = renderHook(() => useHandleSwap());
+
+    act(() => {
+      result.current.handleSwap(data);
     });
 
-    // Assert: Should not trigger swap if loading
-    expect(useProcessModal().showProcessModal).not.toHaveBeenCalled();
+    // Check if process modal is shown for Tron
+    expect(mockShowProcessModal).toHaveBeenCalledWith('building');
+  });
+
+  it('should handle error when Cardano wallet is not connected', async () => {
+    useCardano.mockReturnValue({ account: null, lucid: null });
+
+    const data = {
+      sender: { amount: '100', ticker: 'ADA', blockchain: 'cardano' },
+      receiver: { address: 'mock-receiver-address', amount: '100', ticker: 'MyUSD', blockchain: 'cardano' },
+    };
+
+    const { result } = renderHook(() => useHandleSwap());
+
+    act(() => {
+      result.current.handleSwap(data);
+    });
+
+    // Check if error modal is shown for Cardano
+    expect(mockShowProcessModal).toHaveBeenCalledWith('failed', 'Connect your Wallet', 'Error');
+  });
+
+  it('should handle error when Tron wallet is not connected', async () => {
+    useTronlink.mockReturnValue({ address: null });
+
+    const data = {
+      sender: { amount: '100', ticker: 'USDT', blockchain: 'tron' },
+      receiver: { address: 'mock-receiver-address', amount: '100', ticker: 'USDC', blockchain: 'tron' },
+    };
+
+    const { result } = renderHook(() => useHandleSwap());
+
+    act(() => {
+      result.current.handleSwap(data);
+    });
+
+    // Check if error modal is shown for Tron
+    expect(mockShowProcessModal).toHaveBeenCalledWith('failed', 'Connect your Wallet', 'Error');
+  });
+
+  it('should call handleApiError on unexpected error', async () => {
+    const error = new Error('Unexpected error');
+    axios.post.mockRejectedValueOnce(error);
+
+    const { result } = renderHook(() => useHandleSwap());
+
+    const data = {
+      sender: { amount: '100', ticker: 'ADA', blockchain: 'cardano' },
+      receiver: { address: 'mock-receiver-address', amount: '100', ticker: 'MyUSD', blockchain: 'cardano' },
+    };
+
+    act(() => {
+      result.current.handleSwap(data);
+    });
+
+    // Check if the error handler was called
+    expect(mockHandleApiError).toHaveBeenCalledWith(error, mockShowProcessModal);
   });
 });

@@ -15,39 +15,39 @@ The module manages different blockchain operations, ensuring the user has suffic
 
 ## **Refactoring Changes**
 
-### **1. Code Structure and Modularity Improvements**
+### **1. Declared Constants and Enums for Improved Maintainability and Readability**
 
-The original code had a single function (`handleSwap`) that contained all of the logic for Cardano and Tron swaps. This caused a significant mix of concerns and made the code harder to maintain.
+The original code used hardcoded strings and URLs throughout the `useHandleSwap` function. By declaring constants and enums, we can avoid repetition, prevent errors from typos, and make future updates easier.
 
 **Changes made:**
-- **Separation of concerns**: Refactored the main `handleSwap` function to delegate responsibilities to two specific functions:
-  - `handleSwapFromCardanoWallet`: Handles all Cardano-related logic, including balance checks, transaction building, and API calls.
-  - `handleSwapFromTronLinkWallet`: Handles all Tron-related logic, including balance checks, transaction building, and API calls.
+- **Defined Status and Tokens as Enums**: Introduced enums for various status messages (`showProcessModalStatus`, `Tokens`), ensuring consistency across the codebase when referring to specific statuses or token types.
+- **Defined Backend Base URL as Const**: Set the backend base URL as a constant to easily modify it when switching environments or updating the backend API.
+- **Defined Error and Success Messages as Const**: Used constants for messages that are displayed to the user, improving the ease of updating messages across the application.
   
 **Reasoning**: 
-- By splitting the logic into smaller functions, each handling a specific blockchain, we improve code readability, maintainability, and make it easier to add support for additional blockchains in the future.
+- Makes the code more maintainable by centralizing values that are subject to change. If we need to update a URL or message, we can now do so in one place rather than across the entire codebase.
 
-### **2. Enhanced Error Handling**
+### **2. Extracted Common Parts as Separate Functions**
 
-The original code did not handle errors gracefully in certain cases, especially API errors or wallet issues.
-
-**Changes made:**
-- Added improved error handling using the custom `useHandleApiError` hook.
-- Introduced a better user feedback mechanism through modals (`showProcessModal`, `showSuccessModal`).
-  
-**Reasoning**:
-- This change ensures that any issues (e.g., insufficient funds, API failures, transaction errors) are reported back to the user in a clear and actionable way, improving the user experience.
-
-### **3. Modular API Calls and Wallet Integration**
-
-The original module performed API requests and wallet interactions in a single block of code, making it difficult to test and mock the individual interactions.
+Certain code sections were repetitive and could benefit from being abstracted into reusable functions to improve code readability and minimize redundancy.
 
 **Changes made:**
-- Refactored API calls (e.g., `axios.post`) into separate service functions for better isolation.
-- Simplified wallet interaction logic by abstracting it into dedicated functions (`useCardano`, `useTronlink`).
+- Added a `customErrorHandle` function to centralize error handling logic and reduce code duplication across multiple places where errors are handled.
   
 **Reasoning**:
-- Modularizing API calls and wallet integration improves code organization and testing coverage by isolating side effects and external dependencies.
+- By extracting common logic into reusable functions, the code becomes cleaner, more modular, and easier to maintain.
+
+### **3. Applied False-First Principle and Simplified Conditional Logic**
+
+Some parts of the code were difficult to follow due to nested `if-else` conditions and complex promise chains. Applying the false-first principle, simplifying conditional logic, and refactoring to use `async/await` made the flow clearer and more readable.
+
+**Changes made:**
+- Replaced promise chains (`then/catch`) with `async/await` and wrapped them in `try-catch` blocks for clearer error handling.
+- Refined `if-else` logic to follow the false-first principle, making the code more intuitive and concise.
+- Consolidated multi-line variable assignments into single-line statements for better readability.
+  
+**Reasoning**:
+- Simplified control flow using `async/await` and false-first reduces the cognitive load of understanding the code, leading to faster debugging and maintenance.
 
 ### **4. Unit Test Coverage**
 

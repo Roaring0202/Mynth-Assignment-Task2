@@ -42,13 +42,20 @@ const MESSAGE_CANNOT_ASSEMBLE = "Cannot assemble transaction"
 const MESSAGE_MUST_CONNECT_TRON = "Tron wallet must be connected"
 
 enum showProcessModalStatus {
-    GENERATING = "generating",
-    BUILDING = "building",
-    SIGNING = "signing",
-    SUBMITTING = "submitting"
+  GENERATING = "generating",
+  BUILDING = "building",
+  SIGNING = "signing",
+  SUBMITTING = "submitting",
+  FAILED = "failed"
 }
 
-const status: showProcessModalStatus = showProcessModalStatus.FAILED;
+enum Tokens {
+  ADA = "ADA",
+  MyUSD = "MyUSD",
+  IAG = "IAG",
+  USDT = "USDT",
+  USDC = "USDC"
+}
 
 const useHandleSwap = () => {
     const { handleApiError } = useHandleApiError();
@@ -75,7 +82,7 @@ const useHandleSwap = () => {
     const userAddress = account?.address;
 
     if (!lucid || !userAddress) {
-      showProcessModal("failed", MESSAGE_CONNECT_WALLET, errorMessages?.walletUnconnected ?? "Error");
+      showProcessModal(showProcessModalStatus.FAILED, MESSAGE_CONNECT_WALLET, errorMessages?.walletUnconnected ?? "Error");
       setSwapLoading(false);
       return;
     }
@@ -100,7 +107,7 @@ const useHandleSwap = () => {
     const {ticker: tokenToSwap, amount, blockchain: senderBlockchain} = data.sender;
     const {ticker: tokenToReceive, address: receiverAddress, blockchain: receiverBlockchain} = data.receiver;
 
-    if (tokenToSwap === "ADA" && tokenToReceive === "MyUSD") {
+    if (tokenToSwap === Tokens.ADA && tokenToReceive === Tokens.MyUSD) {
       swapRequireSignature = false;
       swapBuildUrl = `${BACKEND_BASE_URL}/swap-ada/build`;
       swapBuildData = {
@@ -108,7 +115,7 @@ const useHandleSwap = () => {
         utxos: mappedUtxos,
         adaAmount: toCardanoTokens(amount),
       };
-    } else if (tokenToSwap === "MyUSD" && tokenToReceive === "ADA") {
+    } else if (tokenToSwap === Tokens.MyUSD && tokenToReceive === Tokens.ADA) {
       swapRequireSignature = false;
       swapBuildUrl = `${BACKEND_BASE_URL}/swap-myusd-ada/build`;
       swapBuildData = {
@@ -117,8 +124,8 @@ const useHandleSwap = () => {
         amount: toCardanoTokens(amount),
       };
     } else if (
-      (tokenToSwap === "MyUSD" || tokenToSwap === "IAG") &&
-      (tokenToReceive === "USDT" || tokenToReceive === "USDC")
+      (tokenToSwap === Tokens.MyUSD || tokenToSwap === Tokens.IAG) &&
+      (tokenToReceive === Tokens.USDT || tokenToReceive === Tokens.USDC)
     ) {
       swapBuildUrl = `${BACKEND_BASE_URL}/swap/build`;
       swapBuildData = {
@@ -131,7 +138,7 @@ const useHandleSwap = () => {
       };
     } else {
       setSwapLoading(false);
-      showProcessModal("failed", "Unavailable swap", `Swap of ${tokenToSwap} to ${tokenToReceive} is not available at this time, try again later`);
+      showProcessModal(showProcessModalStatus.FAILED, "Unavailable swap", `Swap of ${tokenToSwap} to ${tokenToReceive} is not available at this time, try again later`);
 
       return;
     }
@@ -157,19 +164,19 @@ const useHandleSwap = () => {
       let signedTx;
       const lucidTx = lucid.fromTx(txFromSwapBuildApi.tx);
       
-        try {
-            if (!swapRequireSignature) {
-                signedTx = await lucidTx.sign().complete();
-            } else {
-                const lucidTx = lucid.fromTx(txFromSwapBuildApi.tx);
-                signedTx = await lucidTx
-                    .sign()
-                    .assemble([txFromSwapBuildApi.signature])
-                    .complete();
-            }
-        } catch (error) {
-            return customErrorHandle(error, MESSAGE_CANNOT_ASSEMBLE)
+      try {
+        if (!swapRequireSignature) {
+          signedTx = await lucidTx.sign().complete();
+        } else {
+          const lucidTx = lucid.fromTx(txFromSwapBuildApi.tx);
+          signedTx = await lucidTx
+            .sign()
+            .assemble([txFromSwapBuildApi.signature])
+            .complete();
         }
+      } catch (error) {
+        return customErrorHandle(error, MESSAGE_CANNOT_ASSEMBLE)
+      }
 
       showProcessModal(showProcessModalStatus.SUBMITTING);
 
@@ -180,7 +187,7 @@ const useHandleSwap = () => {
         getAddressUrl(receiverBlockchain, receiverAddress)
       );
     } catch (error) {
-        customErrorHandle(error)
+      customErrorHandle(error)
     } finally {
       setSwapLoading(false);
     }
@@ -196,7 +203,7 @@ const useHandleSwap = () => {
     showProcessModal(showProcessModalStatus.BUILDING);
 
     if (!address) {
-      showProcessModal("failed", MESSAGE_CONNECT_WALLET, errorMessages?.walletUnconnected ?? "Error");
+      showProcessModal(showProcessModalStatus.FAILED, MESSAGE_CONNECT_WALLET, errorMessages?.walletUnconnected ?? "Error");
       setSwapLoading(false);
       return;
     }
@@ -207,8 +214,8 @@ const useHandleSwap = () => {
       const usdtDestination = getEnvConfig<string>("tron.usdt.destination");
       const usdcDestination = getEnvConfig<string>("tron.usdc.destination");
 
-      const contractAddress = ticker === "USDT" ? usdtContractAddress : usdcContractAddress;
-      const destination = ticker === "USDT" ? usdtDestination : usdcDestination;
+      const contractAddress = ticker === Tokens.USDT ? usdtContractAddress : usdcContractAddress;
+      const destination = ticker === Tokens.USDT ? usdtDestination : usdcDestination;
       const amountToSend = toCardanoTokens(amount);
 
       if (!window.tron ||!window.tron.tronWeb || !window.tron.tronWeb.defaultAddress) throw new Error(MESSAGE_MUST_CONNECT_TRON);
@@ -276,22 +283,22 @@ const useHandleSwap = () => {
         userAddress,
         txFromTronBuildApi
       )
-        .then((response) => {
-          if (!response.ok) {
-            const {error} = response;
-            const errorToSend = typeof error === "string" ? { info: error } : error;
-            customErrorHandle(errorToSend);
-          } else {
-            showSuccessModal(
-              getTransactionUrl(senderBlockchain, response.data),
-              getAddressUrl(userBlockchain, userAddress)
-            );
-          }
-        })
-        .catch((error) => {
+      .then((response) => {
+        if (!response.ok) {
+          const {error} = response;
           const errorToSend = typeof error === "string" ? { info: error } : error;
-          customErrorHandle(errorToSend)
-        });
+          customErrorHandle(errorToSend);
+        } else {
+          showSuccessModal(
+            getTransactionUrl(senderBlockchain, response.data),
+            getAddressUrl(userBlockchain, userAddress)
+          );
+        }
+      })
+      .catch((error) => {
+        const errorToSend = typeof error === "string" ? { info: error } : error;
+        customErrorHandle(errorToSend)
+      });
     } catch (error) {
       handleApiError(error, showProcessModal);
     } finally {
